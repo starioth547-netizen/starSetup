@@ -1,0 +1,549 @@
+local player = game.Players.LocalPlayer
+local function setupCharacter(character)
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+end
+if player.Character then
+	setupCharacter(player.Character)
+end
+player.CharacterAdded:Connect(setupCharacter)
+local MAP_ASSET_ID = 13336839729 
+local ALTURA_INICIAL = 5000 
+local soundReplacementEnabled = false
+local replacementSoundId = "rbxasset://sounds/oof.ogg"
+local soundReplacementConnection = nil
+local function IsRobloxAsset(id)
+	return id:match("^%d+$") or id:match("^rbxasset://") or id:match("^rbxassetid://")
+end
+local function IsHttpAsset(url)
+	return url:match("^https?://")
+end
+local function DownloadAndPlaySound(url)
+	local SoundService = game:GetService("SoundService")
+	local requestFunc = syn and syn.request or http_request or request
+	if not requestFunc then
+		warn("No HTTP request function available")
+		return nil
+	end
+	local success, result = pcall(function()
+		local response = requestFunc({
+			Url = url,
+			Method = "GET",
+			Headers = {
+				["User-Agent"] = "Roblox/Luau"
+			}
+		})
+		if response and response.StatusCode == 200 then
+			return response.Body
+		else
+			return nil
+		end
+	end)
+	if success and result then
+		local writeSuccess = pcall(function()
+			writefile(".temp/audio.mp3", result)
+		end)
+		if writeSuccess then
+			local sound = Instance.new("Sound")
+			sound.SoundId = getcustomasset(".temp/audio.mp3")
+			sound.Volume = 0.5
+			sound.Parent = SoundService
+			sound:Play()
+			sound.Stopped:Connect(function()
+				sound:Destroy()
+				pcall(function() delfile(".temp/audio.mp3") end)
+			end)
+			return sound
+		end
+	end
+	return nil
+end
+local function GetFinalSoundId(input)
+	input = input:gsub("^%s*(.-)%s*$", "%1")
+	if input:match("^%d+$") then
+		return "rbxassetid://" .. input
+	elseif input:match("^rbxasset://") or input:match("^rbxassetid://") then
+		return input
+	elseif input:match("^https?://") then
+		return input
+	else
+		return nil
+	end
+end
+local function ReplaceSound(sound, soundId)
+	if IsRobloxAsset(soundId) then
+		sound.SoundId = soundId
+		return true
+	elseif IsHttpAsset(soundId) then
+		DownloadAndPlaySound(soundId)
+		sound.Volume = 0
+		sound:Stop()
+		task.wait(0.1)
+		sound:Destroy()
+		return false
+	end
+	return false
+end
+local function replaceDeathSounds()
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("Sound") then
+			local name = obj.Name
+			if name:lower():find("die") or name:lower():find("died") then
+				if IsRobloxAsset(replacementSoundId) then
+					obj.SoundId = replacementSoundId
+				elseif IsHttpAsset(replacementSoundId) then
+					DownloadAndPlaySound(replacementSoundId)
+					obj.Volume = 0
+					obj:Stop()
+					task.wait(0.1)
+					obj:Destroy()
+				end
+			end
+		end
+	end
+end
+function StopReplaceDeathSounds()
+	if soundReplacementConnection then
+		soundReplacementConnection:Disconnect()
+		soundReplacementConnection = nil
+	end
+end
+function StartReplaceDeathSounds()
+	if soundReplacementConnection then return end
+	soundReplacementConnection = workspace.DescendantAdded:Connect(function(obj)
+		if soundReplacementEnabled and obj:IsA("Sound") then
+			local name = obj.Name
+			if name:lower():find("die") or name:lower():find("died") then
+				if IsRobloxAsset(replacementSoundId) then
+					obj.SoundId = replacementSoundId
+				elseif IsHttpAsset(replacementSoundId) then
+					DownloadAndPlaySound(replacementSoundId)
+					obj.Volume = 0
+					obj:Stop()
+					task.wait(0.1)
+					obj:Destroy()
+				end
+			end
+		end
+	end)
+	replaceDeathSounds()
+end
+function ToggleReplaceDeathSounds()
+	soundReplacementEnabled = not soundReplacementEnabled
+	if soundReplacementEnabled then
+		StartReplaceDeathSounds()
+	else
+		StopReplaceDeathSounds()
+	end
+	return soundReplacementEnabled
+end
+pcall(function() makefolder(".temp") end)
+return function(Tabs)
+	Tabs.Others:Section({ Title = "Avatar", TextSize = 15 })
+	Tabs.Others:Button({ Title = "Avatar Stealer", TextSize = 15, Callback = function() loadstring(game:HttpGet("https://darahub.pages.dev/api/script/Tools/avatar-stealer.lua"))() end })
+	Tabs.Others:Section({ Title = "Audio stuffs", TextSize = 15 })
+	Tabs.Others:Button({ Title = "Sounds player", TextSize = 15, Callback = function() loadstring(game:HttpGet("https://darahub.pages.dev/api/script/Tools%2Fsounds%20player.lua"))() end })
+	Tabs.Others:Section({ Title = "Replace Death Sounds", TextSize = 20 })
+	Tabs.Others:Divider()
+	Tabs.Others:Toggle({
+		Title = "Custom Death Sounds",
+		Value = false,
+		Callback = function(state)
+			soundReplacementEnabled = state
+			if state then
+				StartReplaceDeathSounds()
+			else
+				StopReplaceDeathSounds()
+			end
+		end
+	})
+	local currentInputValue = replacementSoundId
+	Tabs.Others:Input({
+		Title = "Sound ID or HTTP URL",
+		Placeholder = "rbxasset://sounds/oof.ogg",
+		Value = currentInputValue,
+		Callback = function(value)
+			if value and value ~= "" then
+				local finalId = GetFinalSoundId(value)
+				if finalId then
+					replacementSoundId = finalId
+					currentInputValue = value
+					if soundReplacementEnabled then
+						replaceDeathSounds()
+					end
+				else
+					warn("Invalid input. Use: AssetID, rbxasset://, rbxassetid://, or http:// / https://")
+				end
+			end
+		end
+	})
+	Tabs.Others:Button({
+		Title = "Test Sound",
+		TextSize = 15,
+		Callback = function()
+			if IsRobloxAsset(replacementSoundId) then
+				local SoundService = game:GetService("SoundService")
+				local sound = Instance.new("Sound")
+				sound.SoundId = replacementSoundId
+				sound.Volume = 0.5
+				sound.Parent = SoundService
+				sound:Play()
+				sound.Stopped:Connect(function() sound:Destroy() end)
+			elseif IsHttpAsset(replacementSoundId) then
+				DownloadAndPlaySound(replacementSoundId)
+			end
+		end
+	})
+	Tabs.Others:Button({
+		Title = "Apply to Existing Sounds",
+		TextSize = 15,
+		Callback = function()
+			if soundReplacementEnabled then
+				replaceDeathSounds()
+			end
+		end
+	})
+	Tabs.Others:Space()
+	Tabs.Others:Section({ Title = "Map Loader", TextSize = 20 })
+	Tabs.Others:Divider()
+	Tabs.Others:Input({
+		Title = "Map Asset ID",
+		Placeholder = "Enter Map ID",
+		Value = tostring(MAP_ASSET_ID),
+		Callback = function(value)
+			local num = tonumber(value)
+			if num and num > 0 then
+				MAP_ASSET_ID = num
+			else
+				warn("Invalid Map ID. Please enter a valid number.")
+			end
+		end
+	})
+	Tabs.Others:Input({
+		Title = "Initial Height",
+		Placeholder = "Enter height",
+		Value = tostring(ALTURA_INICIAL),
+		Callback = function(value)
+			local num = tonumber(value)
+			if num and num > 0 then
+				ALTURA_INICIAL = num
+			else
+				warn("Invalid height. Please enter a valid number.")
+			end
+		end
+	})
+	function LoadMapOnly()
+		local success, objs = pcall(function()
+			return game:GetObjects("rbxassetid://" .. MAP_ASSET_ID)
+		end)
+		if success and objs[1] then
+			local map = objs[1]
+			map.Parent = workspace
+			task.wait(1)
+			local targetPart = map:FindFirstChildWhichIsA("BasePart", true)
+			if targetPart then
+				root.CFrame = targetPart.CFrame + Vector3.new(0, 5, 0)
+			else
+				root.CFrame = CFrame.new(0, 10, 0)
+				warn("No BasePart found in map. Teleported to (0,10,0).")
+			end
+		else
+			warn("Map loading failed. Please check if the ID is correct.")
+		end
+		root.Anchored = false
+	end
+	Tabs.Others:Button({
+		Title = "Load Map",
+		TextSize = 15,
+		Callback = function()
+			root.Anchored = true
+			root.CFrame = CFrame.new(root.Position.X, ALTURA_INICIAL, root.Position.Z)
+			task.spawn(LoadMapOnly)
+		end
+	})
+	Tabs.Others:Button({
+		Title = "Reset Position",
+		TextSize = 15,
+		Callback = function()
+			root.Anchored = false
+			root.CFrame = CFrame.new(0, 50, 0)
+		end
+	})
+	Tabs.Others:Space()
+	Tabs.Others:Button({
+		Title = "Remove Fuckass game pause ui",
+		Callback = function()
+			local success = false
+			local networkPauseNotification = game:GetService("CoreGui"):FindFirstChild("RobloxGui")
+			if networkPauseNotification then
+				local notification = networkPauseNotification:FindFirstChild("Modules"):FindFirstChild("NetworkPauseNotification")
+				if notification then notification:Destroy() success = true end
+				local networkPause = networkPauseNotification:FindFirstChild("CoreScripts/NetworkPause")
+				if networkPause then networkPause:Destroy() success = true end
+			end
+		end
+	})
+	Tabs.Others:Space()
+	Tabs.Others:Section({ Title = "Desync", TextSize = 20 })
+	Tabs.Others:Button({ 
+		Title = "Visualise Server Desync Postion", 
+		Desc = "Show how server side see your HRP, May not work when u turn off internet", 
+		Callback = function() 
+			local Players = game:GetService("Players")
+			local RunService = game:GetService("RunService")
+			local Stats = game:GetService("Stats")
+
+			local player = Players.LocalPlayer
+			local character = player.Character or player.CharacterAdded:Wait()
+			local rootPart = character:WaitForChild("HumanoidRootPart")
+
+			local UPDATE_INTERVAL = 0.05
+
+			local fakeCharacter = Instance.new("Model")
+			fakeCharacter.Name = "FakeCharacter_ServerView"
+			fakeCharacter.Parent = workspace
+
+			local fakeRootPart = Instance.new("Part")
+			fakeRootPart.Name = "HumanoidRootPart"
+			fakeRootPart.Size = rootPart.Size
+			fakeRootPart.CFrame = rootPart.CFrame
+			fakeRootPart.Anchored = true
+			fakeRootPart.CanCollide = false
+			fakeRootPart.Transparency = 1
+			fakeRootPart.Material = Enum.Material.Plastic
+			fakeRootPart.Parent = fakeCharacter
+
+			local boxAdornment = Instance.new("BoxHandleAdornment")
+			boxAdornment.Name = "ServerViewBox"
+			boxAdornment.Adornee = fakeRootPart
+			boxAdornment.Size = rootPart.Size + Vector3.new(0.5, 0.5, 0.5)
+			boxAdornment.Color3 = Color3.new(1, 1, 1)
+			boxAdornment.Transparency = 0.3
+			boxAdornment.ZIndex = 0
+			boxAdornment.AlwaysOnTop = true
+			boxAdornment.Parent = fakeRootPart
+
+			local fakeHumanoid = Instance.new("Humanoid")
+			fakeHumanoid.Name = "Humanoid"
+			fakeHumanoid.Parent = fakeCharacter
+
+			local positionHistory = {}
+
+			local function getRealPing()
+				local ping = 0
+				local pingSuccess, pingResult = pcall(function()
+					return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+				end)
+				
+				if pingSuccess and pingResult then
+					ping = pingResult
+				end
+				
+				return ping
+			end
+
+			local function addPositionToHistory(position)
+				local currentTime = tick()
+				table.insert(positionHistory, {
+					position = position,
+					time = currentTime
+				})
+				
+				local maxHistory = math.ceil(2000 / (UPDATE_INTERVAL * 1000)) + 10
+				if #positionHistory > maxHistory then
+					table.remove(positionHistory, 1)
+				end
+			end
+
+			local function getPositionAtTime(targetTime)
+				if #positionHistory == 0 then
+					return rootPart.Position
+				end
+				
+				local closestIndex = 1
+				local closestDiff = math.abs(positionHistory[1].time - targetTime)
+				
+				for i = 2, #positionHistory do
+					local diff = math.abs(positionHistory[i].time - targetTime)
+					if diff < closestDiff then
+						closestDiff = diff
+						closestIndex = i
+					end
+				end
+				
+				return positionHistory[closestIndex].position
+			end
+
+			local function updateFakeCharacter()
+				if not character or not character.Parent then return end
+				if not rootPart or not rootPart.Parent then return end
+				
+				local ping = getRealPing()
+				ping = math.max(10, math.min(1000, ping))
+				
+				local pingDelay = ping / 1000
+				
+				addPositionToHistory(rootPart.Position)
+				
+				local serverTime = tick() - pingDelay
+				
+				local serverPosition
+				if #positionHistory > 1 then
+					serverPosition = getPositionAtTime(serverTime)
+				else
+					serverPosition = rootPart.Position
+				end
+				
+				local currentCFrame = rootPart.CFrame
+				local newCFrame = CFrame.new(serverPosition) * (currentCFrame - currentCFrame.Position)
+				fakeRootPart.CFrame = newCFrame
+			end
+
+			local connection = RunService.Heartbeat:Connect(function()
+				updateFakeCharacter()
+			end)
+
+			local function cleanup()
+				if connection then
+					connection:Disconnect()
+					connection = nil
+				end
+				if fakeCharacter then
+					fakeCharacter:Destroy()
+				end
+			end
+
+			player.CharacterAdded:Connect(function(newCharacter)
+				cleanup()
+				
+				character = newCharacter
+				rootPart = character:WaitForChild("HumanoidRootPart")
+				
+				positionHistory = {}
+				
+				fakeCharacter = Instance.new("Model")
+				fakeCharacter.Name = "FakeCharacter_ServerView"
+				fakeCharacter.Parent = workspace
+				
+				fakeRootPart = Instance.new("Part")
+				fakeRootPart.Name = "HumanoidRootPart"
+				fakeRootPart.Size = rootPart.Size
+				fakeRootPart.CFrame = rootPart.CFrame
+				fakeRootPart.Anchored = true
+				fakeRootPart.CanCollide = false
+				fakeRootPart.Transparency = 1
+				fakeRootPart.Material = Enum.Material.Plastic
+				fakeRootPart.Parent = fakeCharacter
+				
+				boxAdornment = Instance.new("BoxHandleAdornment")
+				boxAdornment.Name = "ServerViewBox"
+				boxAdornment.Adornee = fakeRootPart
+				boxAdornment.Size = rootPart.Size + Vector3.new(0.5, 0.5, 0.5)
+				boxAdornment.Color3 = Color3.new(1, 1, 1)
+				boxAdornment.Transparency = 0.3
+				boxAdornment.AlwaysOnTop = true
+				boxAdornment.Parent = fakeRootPart
+				
+				fakeHumanoid = Instance.new("Humanoid")
+				fakeHumanoid.Name = "Humanoid"
+				fakeHumanoid.Parent = fakeCharacter
+				
+				connection = RunService.Heartbeat:Connect(function()
+					updateFakeCharacter()
+				end)
+			end)
+		end 
+	})
+	Tabs.Others:Space()
+	Tabs.Others:Button({
+		Title = "Shift lock",
+		Callback = function()
+			loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-Shiftlock-script-42373"))() 
+		end
+	})
+	Tabs.Others:Space()
+	Tabs.Others:Button({
+		Title = "Execute Wallhop Script",
+		Callback = function()
+			loadstring(game:HttpGet("https://darahub.pages.dev/api/script/Some useful stuff/WallHop.lua"))()
+		end
+	})
+	Tabs.Others:Space()
+	Tabs.Visuals:Button({
+		Title = "Execute Freecam Script",
+		Callback = function()
+			loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-Freecam-Unfinshed-205414"))()
+		end
+	})
+	Tabs.Visuals:Space()
+	Tabs.Visuals:Button({
+		Title = "Fake Headless",
+		Callback = function() 
+			if fakeheadless then return end 
+			player = game.Players.LocalPlayer 
+			function applyHeadless(character) 
+				head = character:WaitForChild("Head", 5) 
+				if head then 
+					head.Transparency = 1 
+					face = head:FindFirstChild("face") 
+					if face then face.Transparency = 1 end 
+				end 
+			end 
+			if player.Character then applyHeadless(player.Character) end 
+			player.CharacterAdded:Connect(applyHeadless) 
+			fakeheadless = true 
+		end
+	})
+	Tabs.Visuals:Space()
+	Tabs.Visuals:Button({
+		Title = "Fake Korblox",
+		Callback = function()
+			if FakeKorblox then return end
+			player.CharacterAdded:Connect(function(char) 
+				task.spawn(function() 
+					while task.wait(0.5) do 
+						if player.Character then 
+							local hum = player.Character:FindFirstChildOfClass("Humanoid") 
+							if hum then 
+								if hum.RigType == Enum.HumanoidRigType.R15 then 
+									local ru = player.Character:FindFirstChild("RightUpperLeg") 
+									if ru then 
+										ru.MeshId = "rbxassetid://902942096" 
+										ru.TextureID = "rbxassetid://902843398" 
+										ru.Color = Color3.new(1,1,1) 
+										ru.Transparency = 0 
+									end 
+									local rf = player.Character:FindFirstChild("RightFoot") 
+									local rl = player.Character:FindFirstChild("RightLowerLeg") 
+									if rf and rl then 
+										rf.Transparency = 1 
+										rl.Transparency = 1 
+									end 
+								else 
+									local rightLeg = player.Character:FindFirstChild("Right Leg") 
+									if rightLeg then 
+										for _, v in ipairs(player.Character:GetChildren()) do 
+											if v:IsA("CharacterMesh") and v.BodyPart == Enum.BodyPart.RightLeg then 
+												v:Destroy() 
+											end 
+										end 
+										local mesh = rightLeg:FindFirstChildOfClass("SpecialMesh") or Instance.new("SpecialMesh") 
+										mesh.Parent = rightLeg 
+										rightLeg.Color = Color3.fromRGB(64,64,64) 
+										rightLeg.Transparency = 0 
+										mesh.MeshType = Enum.MeshType.FileMesh 
+										mesh.MeshId = "rbxassetid://80285324300688" 
+										mesh.TextureId = "rbxassetid://80285324300688" 
+										mesh.Scale = Vector3.new(1,1,1) 
+									end 
+								end 
+							end 
+						end 
+					end 
+				end) 
+			end)
+			FakeKorblox = true
+		end
+	})
+	Tabs.Visuals:Space()
+end
